@@ -25,6 +25,8 @@ import math
 import numpy as np
 from collections import Counter
 
+from collections import defaultdict
+
 
 class FaceAgent(TorchGeneratorAgent):
 
@@ -87,7 +89,7 @@ class FaceAgent(TorchGeneratorAgent):
                            choices=['out', 'gt', 'none'],
                            help='What to use for calculating token frequency.')
         agent.add_argument('-wt', '--weighing-time', default='pre',
-                           choices=['pre', 'post', 'none'],
+                           choices=['pre', 'post', 'post_gradual', 'none'],
                            help='When to apply weight to losses.')
         agent.add_argument('-cp', '--confidence-penalty', default='none',
                            choices=['cp', 'cpf', 'cpfw', 'cpfwn', 'none'],
@@ -124,6 +126,9 @@ class FaceAgent(TorchGeneratorAgent):
     def build_model(self, states=None):
         """Initialize model, override to change model setup."""
         opt = self.opt
+        # self.model = Seq2seq(len(self.dict), opt['embeddingsize'], opt['hiddensize'])
+        # self.load("C:/Users/Danie/Documents/Programming/Python/Project AI/ParlAI-master/parlai/agents/twitter_seq2seq_model/twitter_seq2seq_model")
+        # self.model.load_state_dict(torch.load("C:/Users/Danie/Documents/Programming/Python/Project AI/ParlAI-master/parlai/agents/twitter_seq2seq_model/twitter_seq2seq_model.dict"))
         if not states:
             states = {}
 
@@ -219,6 +224,36 @@ class FaceAgent(TorchGeneratorAgent):
                 total_freq = self.word_freq.sum()
                 weight = 1 + F.relu(freq_pred - freq_GT) / total_freq
                 loss = torch.matmul(loss, weight)
+
+            elif self.wt == 'post_gradual':
+                self.criterion.reduction = 'none'
+                loss = self.criterion(score_view, batch.label_vec.view(-1))
+                device = loss.device
+
+                s_length = preds.size(1)
+                weight = torch.ones(batchsize, s_length)
+                unigrams = set()
+                bigrams = set()
+                for b in range(batchsize):
+                    sentence = preds[b]
+                    last_token = 0
+                    for i, token in enumerate(sentence):
+                        if token == self.END_IDX:  # Weigh every EOS token as 1
+                            break
+
+                        unigram = token
+                        unigrams.add(unigram)
+
+                        bigram = (last_token, token)
+                        last_token = token
+                        bigrams.add(bigram)
+
+                        n_tokens = i+1
+                        weight[b, i] = 0.7*n_tokens/len(unigrams) + 0.3*n_tokens/len(bigrams)
+                    unigrams.clear()
+                    bigrams.clear()
+
+                loss = torch.matmul(loss, weight.view(-1, 1).to(device))
             else:
                 loss = self.criterion(score_view, batch.label_vec.view(-1))
 
@@ -402,6 +437,10 @@ class FaceAgent(TorchGeneratorAgent):
     def load(self, path):
         """Return opt and model states."""
         states = torch.load(path, map_location=lambda cpu, _: cpu)
+        # print()
+        # for k,v in states["model"].items():
+        #     print(k, len(v))
+        # quit()
         if 'word_freq' in states:
             self.word_freq = states['word_freq']
         # set loaded states if applicable
