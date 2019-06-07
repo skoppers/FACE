@@ -102,7 +102,8 @@ class FaceAgent(TorchGeneratorAgent):
         agent.add_argument('-b', '--beta', type=float, default=2.5,
                            help='Penalty strength for type "cp".')
 
-        agent.add_argument('-print', type=bool, default=False, help='Print examples during validation')
+        # agent.add_argument('-print', type=bool, default=False, help='Print examples during validation')
+        agent.add_argument('-n_grams', type=int, default=2, help='Order n-gram to use in post_gradual weighting')
 
         super(cls, FaceAgent).add_cmdline_args(argparser)
         FaceAgent.dictionary_class().add_cmdline_args(argparser)
@@ -125,12 +126,11 @@ class FaceAgent(TorchGeneratorAgent):
         self.masked_entropy = HLoss(ignore_index=self.NULL_IDX)
         self.ideal_entropy = math.log(1 / len(self.dict))
 
+        self.n_grams = opt['n_grams']
+
     def build_model(self, states=None):
         """Initialize model, override to change model setup."""
         opt = self.opt
-        # self.model = Seq2seq(len(self.dict), opt['embeddingsize'], opt['hiddensize'])
-        # self.load("C:/Users/Danie/Documents/Programming/Python/Project AI/ParlAI-master/parlai/agents/twitter_seq2seq_model/twitter_seq2seq_model")
-        # self.model.load_state_dict(torch.load("C:/Users/Danie/Documents/Programming/Python/Project AI/ParlAI-master/parlai/agents/twitter_seq2seq_model/twitter_seq2seq_model.dict"))
         if not states:
             states = {}
 
@@ -234,28 +234,41 @@ class FaceAgent(TorchGeneratorAgent):
 
                 s_length = preds.size(1)
                 weight = torch.ones(batchsize, s_length)
-                # weight = torch.ones(batchsize, 1)
-                unigrams = set()
-                bigrams = set()
+
+                n_grams = self.n_grams
+
+                # unigrams = set()
+                # bigrams = set()
+
+                weights = [1/n_grams]*n_grams
+                n_gram_sets = [set() for _ in range(n_grams)]
+                last_tokens = [0 for _ in range(n_grams-1)]
                 for b in range(batchsize):
                     sentence = preds[b]
-                    last_token = 0
                     for i, token in enumerate(sentence):
-                        if token == self.END_IDX:  # Weigh every padding token as 1
-                            break
                         token = token.item()
+                        if token == self.END_IDX:  # Only adjust weights until the EOS
+                            break
 
-                        unigram = token
-                        unigrams.add(unigram)
+                        # unigram = token
+                        # unigrams.add(unigram)
+                        #
+                        # bigram = (last_token, token)
+                        # last_token = token
+                        # bigrams.add(bigram)
+                        last_tokens.append(token)
+                        n = 1
+                        for n_gram in n_gram_sets:
+                            n_gram.add(tuple(last_tokens[-n:]))
+                            n += 1
 
-                        bigram = (last_token, token)
-                        last_token = token
-                        bigrams.add(bigram)
 
                         n_tokens = i+1
-                        weight[b, i] = 0.7*n_tokens/len(unigrams) + 0.3*n_tokens/len(bigrams)
-                    unigrams.clear()
-                    bigrams.clear()
+                        # weight[b, i] = 0.7*n_tokens/len(unigrams) + 0.3*n_tokens/len(bigrams)
+                        weight[b, i] = sum([weights[x]*n_tokens/len(n_gram_sets[x]) for x in range(n_grams)])
+
+                    for n_gram in n_gram_sets:
+                        n_gram.clear()
 
                 loss = torch.matmul(loss, weight.view(-1, 1).to(device))
 
