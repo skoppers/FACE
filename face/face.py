@@ -102,6 +102,8 @@ class FaceAgent(TorchGeneratorAgent):
         agent.add_argument('-b', '--beta', type=float, default=2.5,
                            help='Penalty strength for type "cp".')
 
+        agent.add_argument('-print', type=bool, default=False, help='Print examples during validation')
+
         super(cls, FaceAgent).add_cmdline_args(argparser)
         FaceAgent.dictionary_class().add_cmdline_args(argparser)
         return agent
@@ -232,14 +234,16 @@ class FaceAgent(TorchGeneratorAgent):
 
                 s_length = preds.size(1)
                 weight = torch.ones(batchsize, s_length)
+                # weight = torch.ones(batchsize, 1)
                 unigrams = set()
                 bigrams = set()
                 for b in range(batchsize):
                     sentence = preds[b]
                     last_token = 0
                     for i, token in enumerate(sentence):
-                        if token == self.END_IDX:  # Weigh every EOS token as 1
+                        if token == self.END_IDX:  # Weigh every padding token as 1
                             break
+                        token = token.item()
 
                         unigram = token
                         unigrams.add(unigram)
@@ -254,8 +258,16 @@ class FaceAgent(TorchGeneratorAgent):
                     bigrams.clear()
 
                 loss = torch.matmul(loss, weight.view(-1, 1).to(device))
+
             else:
                 loss = self.criterion(score_view, batch.label_vec.view(-1))
+
+            # Print the examples of one batch
+            # print()
+            # # print(self._v2t(batch.label_vec[-1]), ' - ', self._v2t(preds[-1]))  # one example
+            # for i in range(len(preds)):
+            #     print(self._v2t(batch.label_vec[i]), ' - ', self._v2t(preds[i]))  # all examples
+            # quit()
 
             notnull = batch.label_vec.ne(self.NULL_IDX)
             target_tokens = notnull.long().sum().item()
@@ -486,6 +498,37 @@ class FaceAgent(TorchGeneratorAgent):
             metrics['num_d1'] = len(unigram)
             metrics['num_d2'] = len(bigram)
             metrics['num_tok'] = num_tok
+        self.calc_diversity_gradual(metrics)
+
+    def calc_diversity_gradual(self, metrics):
+        unigrams = set()
+        bigrams = set()
+        batch_size = 0
+        batch_diversity = 0
+        for sentence in self.metrics['preds']:
+            batch_size += 1
+            last_token = 0
+            diversity = 0
+            n_tokens = 0
+            for token in sentence:
+                if token == self.END_IDX:  # Weigh every padding token as 1
+                    break
+                n_tokens += 1
+
+                unigram = token
+                unigrams.add(unigram)
+
+                bigram = (last_token, token)
+                last_token = token
+                bigrams.add(bigram)
+
+                diversity += 0.7 * len(unigrams) / n_tokens + 0.3 * len(bigrams) / n_tokens
+            if n_tokens:
+                batch_diversity += diversity / n_tokens
+            unigrams.clear()
+            bigrams.clear()
+
+        metrics['d_gradual'] = round(batch_diversity / batch_size, 3)
 
     def report(self):
         """Report loss and perplexity from model's perspective.
