@@ -25,8 +25,6 @@ import math
 import numpy as np
 from collections import Counter
 
-from collections import defaultdict
-
 
 class FaceAgent(TorchGeneratorAgent):
 
@@ -102,8 +100,10 @@ class FaceAgent(TorchGeneratorAgent):
         agent.add_argument('-b', '--beta', type=float, default=2.5,
                            help='Penalty strength for type "cp".')
 
-        # agent.add_argument('-print', type=bool, default=False, help='Print examples during validation')
         agent.add_argument('-n_grams', type=int, default=2, help='Order n-gram to use in post_gradual weighting')
+        agent.add_argument('-n_grams_weighting', default="", help='Weighting between n-grams in post_gradual weights'
+                                                                  'calculation, specify as: "w1 w2 w3...".'
+                                                                  'Leave blank for uniform weighting.')
 
         super(cls, FaceAgent).add_cmdline_args(argparser)
         FaceAgent.dictionary_class().add_cmdline_args(argparser)
@@ -127,6 +127,9 @@ class FaceAgent(TorchGeneratorAgent):
         self.ideal_entropy = math.log(1 / len(self.dict))
 
         self.n_grams = opt['n_grams']
+        self.n_gram_weights = [float(x) for x in opt['n_grams_weighting'].split()]
+        if not self.n_gram_weights:
+            self.n_gram_weights = [1.0/self.n_grams]*self.n_grams
 
     def build_model(self, states=None):
         """Initialize model, override to change model setup."""
@@ -236,11 +239,8 @@ class FaceAgent(TorchGeneratorAgent):
                 weight = torch.ones(batchsize, s_length)
 
                 n_grams = self.n_grams
+                n_gram_weights = self.n_gram_weights
 
-                # unigrams = set()
-                # bigrams = set()
-
-                weights = [1/n_grams]*n_grams
                 n_gram_sets = [set() for _ in range(n_grams)]
                 last_tokens = [0 for _ in range(n_grams-1)]
                 for b in range(batchsize):
@@ -250,12 +250,6 @@ class FaceAgent(TorchGeneratorAgent):
                         if token == self.END_IDX:  # Only adjust weights until the EOS
                             break
 
-                        # unigram = token
-                        # unigrams.add(unigram)
-                        #
-                        # bigram = (last_token, token)
-                        # last_token = token
-                        # bigrams.add(bigram)
                         last_tokens.append(token)
                         n = 1
                         for n_gram in n_gram_sets:
@@ -265,7 +259,7 @@ class FaceAgent(TorchGeneratorAgent):
 
                         n_tokens = i+1
                         # weight[b, i] = 0.7*n_tokens/len(unigrams) + 0.3*n_tokens/len(bigrams)
-                        weight[b, i] = sum([weights[x]*n_tokens/len(n_gram_sets[x]) for x in range(n_grams)])
+                        weight[b, i] = sum([n_gram_weights[x]*n_tokens/len(n_gram_sets[x]) for x in range(n_grams)])
 
                     for n_gram in n_gram_sets:
                         n_gram.clear()
