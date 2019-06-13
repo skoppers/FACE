@@ -25,6 +25,8 @@ import math
 import numpy as np
 from collections import Counter
 
+from itertools import islice
+import nltk
 
 class FaceAgent(TorchGeneratorAgent):
 
@@ -537,6 +539,60 @@ class FaceAgent(TorchGeneratorAgent):
 
         metrics['d_gradual'] = round(batch_diversity / batch_size, 3)
 
+    def window(self, seq, n):
+        "Returns a sliding window (of width n) over data from the iterable"
+        "   s -> (s0,s1,...s[n-1]), (s1,s2,...,sn), ...                   "
+        it = iter(seq)
+        result = tuple(islice(it, n))
+        if len(result) == n:
+            yield result
+        for elem in it:
+            result = result[1:] + (elem,)
+            yield result
+
+    def calc_repetition_rate(self, metrics):
+        all_RR = []
+        max_n_5 = math.ceil(len(self.metrics['preds']) * 0.05)
+        max_n_10 = math.ceil(len(self.metrics['preds']) * 0.1)
+        max_n_20 = math.ceil(len(self.metrics['preds']) * 0.2)
+        for sentence in self.metrics['preds']:
+            S = 8
+            if len(sentence) < S:
+                S = len(sentence)  
+
+            RR = 1
+            for n in range(1, 5):
+                if n > S:
+                    continue
+
+                sum_num = 0
+                sum_den = 0
+                for sw in self.window(sentence, S):
+                    n_grams = list(nltk.ngrams(sw, n))
+                    n_1 = 0
+                    for g in n_grams:
+                        if n_grams.count(g) == 1:
+                            n_1 += 1
+                    n_p = len(set(n_grams))
+
+                    sum_num += n_p - n_1
+                    sum_den += n_p
+                
+                RR = RR * (sum_num / sum_den)
+
+            all_RR.append(np.power(RR, 0.25))
+        
+        max_ind =  np.argpartition(all_RR, -max_n_5)[-max_n_5:]
+        metrics['RR_avg_5'] = np.sum(np.array(all_RR)[max_ind]) / max_n_5
+
+        max_ind =  np.argpartition(all_RR, -max_n_10)[-max_n_10:]
+        metrics['RR_avg_10'] = np.sum(np.array(all_RR)[max_ind]) / max_n_10
+
+        max_ind =  np.argpartition(all_RR, -max_n_20)[-max_n_20:]
+        metrics['RR_avg_20'] = np.sum(np.array(all_RR)[max_ind]) / max_n_20
+
+        metrics['RR_avg'] = np.sum(all_RR) / len(self.metrics['preds'])
+
     def report(self):
         """Report loss and perplexity from model's perspective.
 
@@ -559,7 +615,8 @@ class FaceAgent(TorchGeneratorAgent):
             # clean up: rounds to sigfigs and converts tensors to floats
             m[k] = round_sigfigs(v, 4)
         if self.metrics['preds']:
-            self.calc_diversity(m)
+            # self.calc_diversity(m)
+            self.calc_repetition_rate(m)
         return m
 
     def update_frequency(self, preds):
