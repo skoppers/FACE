@@ -615,7 +615,7 @@ class FaceAgent(TorchGeneratorAgent):
             # clean up: rounds to sigfigs and converts tensors to floats
             m[k] = round_sigfigs(v, 4)
         if self.metrics['preds']:
-            # self.calc_diversity(m)
+            self.calc_diversity(m)
             self.calc_repetition_rate(m)
         return m
 
