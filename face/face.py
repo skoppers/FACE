@@ -509,6 +509,45 @@ class FaceAgent(TorchGeneratorAgent):
             metrics['num_tok'] = num_tok
         self.calc_diversity_gradual(metrics)
 
+    def calc_diversity_per_sentence(self, metrics):
+        unigram = set()
+        bigram = set()
+        
+        batch_size = len(self.metrics['preds'])
+        all_d1 = []
+        all_d2 = []
+        max_n_5 = math.ceil(batch_size * 0.05)
+        max_n_10 = math.ceil(batch_size * 0.1)
+        max_n_20 = math.ceil(batch_size * 0.2)
+
+        for vec in self.metrics['preds']:
+            num_tok = len(vec)
+            unigram.update(vec)
+            bigram.update([tuple(vec[i:i+2]) for i in range(num_tok-1)])
+            all_d1.append(round(len(unigram) / num_tok * 100, 2))
+            all_d2.append(round(len(bigram) / num_tok * 100, 2))
+
+        max_ind =  np.argpartition(all_d1, -max_n_5)[-max_n_5:]
+        metrics['d1_avg_5'] = np.sum(np.array(all_d1)[max_ind]) / max_n_5
+
+        max_ind =  np.argpartition(all_d1, -max_n_10)[-max_n_10:]
+        metrics['d1_avg_10'] = np.sum(np.array(all_d1)[max_ind]) / max_n_10
+
+        max_ind =  np.argpartition(all_d1, -max_n_20)[-max_n_20:]
+        metrics['d1_avg_20'] = np.sum(np.array(all_d2)[max_ind]) / max_n_20
+
+        max_ind =  np.argpartition(all_d2, -max_n_5)[-max_n_5:]
+        metrics['d1_avg_5'] = np.sum(np.array(all_d2)[max_ind]) / max_n_5
+
+        max_ind =  np.argpartition(all_d2, -max_n_10)[-max_n_10:]
+        metrics['d1_avg_10'] = np.sum(np.array(all_d2)[max_ind]) / max_n_10
+
+        max_ind =  np.argpartition(all_d2, -max_n_20)[-max_n_20:]
+        metrics['d1_avg_20'] = np.sum(np.array(all_d2)[max_ind]) / max_n_20
+
+        metrics['d1_avg'] = np.sum(all_d1) / batch_size
+        metrics['d2_avg'] = np.sum(all_d2) / batch_size
+        
     def calc_diversity_gradual(self, metrics):
         unigrams = set()
         bigrams = set()
@@ -615,8 +654,7 @@ class FaceAgent(TorchGeneratorAgent):
             # clean up: rounds to sigfigs and converts tensors to floats
             m[k] = round_sigfigs(v, 4)
         if self.metrics['preds']:
-            # self.calc_diversity(m)
-            self.calc_repetition_rate(m)
+            self.calc_diversity_per_sentence(m)
         return m
 
     def update_frequency(self, preds):
