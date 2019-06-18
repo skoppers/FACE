@@ -524,26 +524,18 @@ class FaceAgent(TorchGeneratorAgent):
             num_tok = len(vec)
             unigram.update(vec)
             bigram.update([tuple(vec[i:i+2]) for i in range(num_tok-1)])
-            all_d1.append(round(len(unigram) / num_tok * 100, 2))
-            all_d2.append(round(len(bigram) / num_tok * 100, 2))
+            all_d1.append(round(len(unigram) / num_tok, 2))
+            all_d2.append(round(len(bigram) / num_tok, 2))
+            unigram.clear()
+            bigram.clear()
 
-        max_ind =  np.argpartition(all_d1, -max_n_5)[-max_n_5:]
-        metrics['d1_avg_5'] = np.sum(np.array(all_d1)[max_ind]) / max_n_5
+        metrics['d1_avg_5'] = np.sum(np.partition(all_d1, max_n_5)[:max_n_5]) / max_n_5
+        metrics['d1_avg_10'] = np.sum(np.partition(all_d1, max_n_10)[:max_n_10]) / max_n_10
+        metrics['d1_avg_20'] = np.sum(np.partition(all_d1, max_n_20)[:max_n_20]) / max_n_20
 
-        max_ind =  np.argpartition(all_d1, -max_n_10)[-max_n_10:]
-        metrics['d1_avg_10'] = np.sum(np.array(all_d1)[max_ind]) / max_n_10
-
-        max_ind =  np.argpartition(all_d1, -max_n_20)[-max_n_20:]
-        metrics['d1_avg_20'] = np.sum(np.array(all_d2)[max_ind]) / max_n_20
-
-        max_ind =  np.argpartition(all_d2, -max_n_5)[-max_n_5:]
-        metrics['d1_avg_5'] = np.sum(np.array(all_d2)[max_ind]) / max_n_5
-
-        max_ind =  np.argpartition(all_d2, -max_n_10)[-max_n_10:]
-        metrics['d1_avg_10'] = np.sum(np.array(all_d2)[max_ind]) / max_n_10
-
-        max_ind =  np.argpartition(all_d2, -max_n_20)[-max_n_20:]
-        metrics['d1_avg_20'] = np.sum(np.array(all_d2)[max_ind]) / max_n_20
+        metrics['d2_avg_5'] = np.sum(np.partition(all_d2, max_n_5)[:max_n_5]) / max_n_5
+        metrics['d2_avg_10'] = np.sum(np.partition(all_d2, max_n_10)[:max_n_10]) / max_n_10
+        metrics['d2_avg_20'] = np.sum(np.partition(all_d2, max_n_20)[:max_n_20]) / max_n_20
 
         metrics['d1_avg'] = np.sum(all_d1) / batch_size
         metrics['d2_avg'] = np.sum(all_d2) / batch_size
