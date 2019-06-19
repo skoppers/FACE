@@ -507,7 +507,7 @@ class FaceAgent(TorchGeneratorAgent):
             metrics['num_d1'] = len(unigram)
             metrics['num_d2'] = len(bigram)
             metrics['num_tok'] = num_tok
-        self.calc_diversity_gradual(metrics)
+        # self.calc_diversity_gradual(metrics)
 
     def calc_diversity_per_sentence(self, metrics):
         unigram = set()
@@ -647,6 +647,7 @@ class FaceAgent(TorchGeneratorAgent):
             m[k] = round_sigfigs(v, 4)
         if self.metrics['preds']:
             self.calc_diversity_per_sentence(m)
+            self.calc_diversity(m)
         return m
 
     def update_frequency(self, preds):
